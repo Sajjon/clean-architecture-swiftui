@@ -22,7 +22,9 @@ struct LazyList<T> {
         self.useCache = useCache
         self.access = access
     }
-    
+}
+
+extension LazyList {
     func element(at index: Int) throws -> T {
         guard useCache else {
             return try get(at: index)
@@ -37,13 +39,6 @@ struct LazyList<T> {
         }
     }
     
-    private func get(at index: Int) throws -> T {
-        guard let element = try access(index) else {
-            throw Error.elementIsNil(index: index)
-        }
-        return element
-    }
-    
     static var empty: Self {
         return .init(count: 0, useCache: false) { index in
             throw Error.elementIsNil(index: index)
@@ -51,24 +46,18 @@ struct LazyList<T> {
     }
 }
 
+// MARK: Private
 private extension LazyList {
-    class Cache {
-        
-        private var elements = [Int: T]()
-        
-        func sync(_ access: (inout [Int: T]) throws -> T) throws -> T {
-            guard Thread.isMainThread else {
-                var result: T!
-                try DispatchQueue.main.sync {
-                    result = try access(&elements)
-                }
-                return result
-            }
-            return try access(&elements)
+    func get(at index: Int) throws -> T {
+        guard let element = try access(index) else {
+            throw Error.elementIsNil(index: index)
         }
+        return element
     }
+    
 }
 
+// MARK: Sequence
 extension LazyList: Sequence {
     
     enum Error: LocalizedError {
@@ -111,6 +100,7 @@ extension LazyList: Sequence {
     var underestimatedCount: Int { count }
 }
 
+// MARK: RandomAccessCollection
 extension LazyList: RandomAccessCollection {
     
     typealias Index = Int
@@ -134,6 +124,7 @@ extension LazyList: RandomAccessCollection {
     }
 }
 
+// MARK: Equatable
 extension LazyList: Equatable where T: Equatable {
     static func == (lhs: LazyList<T>, rhs: LazyList<T>) -> Bool {
         guard lhs.count == rhs.count else { return false }
@@ -141,6 +132,7 @@ extension LazyList: Equatable where T: Equatable {
     }
 }
 
+// MARK:  CustomStringConvertible
 extension LazyList: CustomStringConvertible {
     var description: String {
         let elements = self.reduce("", { str, element in
@@ -153,6 +145,7 @@ extension LazyList: CustomStringConvertible {
     }
 }
 
+// MARK: RandomAccessCollection -> LazyList
 extension RandomAccessCollection {
     var lazyList: LazyList<Element> {
         return .init(count: self.count, useCache: false) {
@@ -160,5 +153,27 @@ extension RandomAccessCollection {
             let index = self.index(self.startIndex, offsetBy: $0)
             return self[index]
         }
+    }
+}
+
+// MARK: Cache
+private extension LazyList {
+    final class Cache {
+        private var elements = [Int: T]()
+    }
+}
+
+extension LazyList.Cache {
+    func sync(
+        _ access: (inout [Int: T]) throws -> T
+    ) throws -> T {
+        guard Thread.isMainThread else {
+            var result: T!
+            try DispatchQueue.main.sync {
+                result = try access(&elements)
+            }
+            return result
+        }
+        return try access(&elements)
     }
 }

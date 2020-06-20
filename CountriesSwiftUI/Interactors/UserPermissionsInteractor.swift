@@ -22,6 +22,15 @@ extension Permission {
     }
 }
 
+extension Permission.Status {
+    var isRequestable: Bool {
+        switch self {
+        case .notRequested, .denied: return true
+        case .granted, .unknown: return false
+        }
+    }
+}
+
 protocol UserPermissionsInteractor: class {
     func resolveStatus(for permission: Permission)
     func request(permission: Permission)

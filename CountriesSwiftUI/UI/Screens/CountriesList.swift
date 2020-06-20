@@ -9,25 +9,28 @@
 import SwiftUI
 import Combine
 
+// MARK: CountriesList
 struct CountriesList: View {
     
-    @State private var countriesSearch = CountriesSearch()
-    @State private(set) var countries: Loadable<LazyList<Country>>
-    @State private var routingState: Routing = .init()
-    private var routingBinding: Binding<Routing> {
-        $routingState.dispatched(to: injected.appState, \.routing.countriesList)
-    }
-    @State private var canRequestPushPermission: Bool = false
     @Environment(\.injected) private var injected: DIContainer
     @Environment(\.locale) private var locale: Locale
+
+    @State private var countriesSearch = CountriesSearch()
+    @State private var countries: Loadable<LazyList<Country>>
+    @State private var routingState: Routing = .init()
+    @State private var canRequestPushPermission: Bool = false
+    
     private let localeContainer = LocaleReader.Container()
     
-    let inspection = Inspection<Self>()
+    internal /* visible for tests */ let inspection = Inspection<Self>()
     
     init(countries: Loadable<LazyList<Country>> = .notRequested) {
         self._countries = .init(initialValue: countries)
     }
-    
+}
+
+// MARK: View
+extension CountriesList {
     var body: some View {
         GeometryReader { geometry in
             NavigationView {
@@ -46,8 +49,16 @@ struct CountriesList: View {
         .onReceive(canRequestPushPermissionUpdate) { self.canRequestPushPermission = $0 }
         .onReceive(inspection.notice) { self.inspection.visit(self, $0) }
     }
-    
-    private var content: AnyView {
+}
+
+// MARK: Private
+// ================
+// ================
+// ================
+// MARK: - SubView
+private extension CountriesList {
+
+    var content: AnyView {
         switch countries {
         case .notRequested: return AnyView(notRequestedView)
         case let .isLoading(last, _): return AnyView(loadingView(last))
@@ -56,22 +67,28 @@ struct CountriesList: View {
         }
     }
     
-    private func leadingPadding(_ geometry: GeometryProxy) -> CGFloat {
+    var permissionsButton: some View {
+          Group {
+              if canRequestPushPermission {
+                  Button(action: requestPushPermission, label: { Text("Allow Push") })
+              } else {
+                  EmptyView()
+              }
+          }
+      }
+}
+
+private extension CountriesList {
+    var routingBinding: Binding<Routing> {
+        $routingState.dispatched(to: injected.appState, \.routing.countriesList)
+    }
+    
+    func leadingPadding(_ geometry: GeometryProxy) -> CGFloat {
         if UIDevice.current.userInterfaceIdiom == .pad {
             // A hack for correct display of the SplitView on iPads
             return geometry.size.width < geometry.size.height ? 0.5 : -0.5
         }
         return 0
-    }
-    
-    private var permissionsButton: some View {
-        Group {
-            if canRequestPushPermission {
-                Button(action: requestPushPermission, label: { Text("Allow Push") })
-            } else {
-                EmptyView()
-            }
-        }
     }
 }
 
@@ -94,7 +111,7 @@ private extension CountriesList {
          Variable `@Environment(\.locale) var locale: Locale`
          from the view is not accessible when searching by name
          */
-        class Container {
+        final class Container {
             var locale: Locale = .backendDefault
         }
         let container: Container
@@ -215,7 +232,7 @@ private extension CountriesList {
     
     var canRequestPushPermissionUpdate: AnyPublisher<Bool, Never> {
         injected.appState.updates(for: AppState.permissionKeyPath(for: .pushNotifications))
-            .map { $0 == .notRequested || $0 == .denied }
+            .map { $0.isRequestable }
             .eraseToAnyPublisher()
     }
 }
