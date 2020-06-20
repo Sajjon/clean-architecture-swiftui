@@ -15,17 +15,24 @@ struct CountriesList: View {
     @Environment(\.injected) private var injected: DIContainer
     @Environment(\.locale) private var locale: Locale
 
-    @State private var countriesSearch = CountriesSearch()
-    @State private var countries: Loadable<LazyList<Country>>
-    @State private var routingState: Routing = .init()
-    @State private var canRequestPushPermission: Bool = false
+    private struct ViewState {
+        @State fileprivate var countries: Loadable<LazyList<Country>>
+        @State fileprivate var countriesSearch = CountriesSearch()
+        @State fileprivate var routingState: Routing = .init()
+        @State fileprivate var canRequestPushPermission: Bool = false
+
+        init(countries: Loadable<LazyList<Country>> = .notRequested) {
+            self._countries = .init(initialValue: countries)
+        }
+    }
+    @State private var state: ViewState
     
     private let localeContainer = LocaleReader.Container()
     
     internal /* visible for tests */ let inspection = Inspection<Self>()
     
     init(countries: Loadable<LazyList<Country>> = .notRequested) {
-        self._countries = .init(initialValue: countries)
+        self._state = .init(initialValue: ViewState(countries: countries))
     }
 }
 
@@ -37,16 +44,16 @@ extension CountriesList {
                 self.content
                     .navigationBarItems(trailing: self.permissionsButton)
                     .navigationBarTitle("Countries".localized(self.locale))
-                    .navigationBarHidden(self.countriesSearch.keyboardHeight > 0)
+                    .navigationBarHidden(self.state.countriesSearch.keyboardHeight > 0)
                     .animation(.easeOut(duration: 0.3))
             }
             .modifier(NavigationViewStyle())
             .padding(.leading, self.leadingPadding(geometry))
         }
         .modifier(LocaleReader(container: localeContainer))
-        .onReceive(keyboardHeightUpdate) { self.countriesSearch.keyboardHeight = $0 }
-        .onReceive(routingUpdate) { self.routingState = $0 }
-        .onReceive(canRequestPushPermissionUpdate) { self.canRequestPushPermission = $0 }
+        .onReceive(keyboardHeightUpdate) { self.state.countriesSearch.keyboardHeight = $0 }
+        .onReceive(routingUpdate) { self.state.routingState = $0 }
+        .onReceive(canRequestPushPermissionUpdate) { self.state.canRequestPushPermission = $0 }
         .onReceive(inspection.notice) { self.inspection.visit(self, $0) }
     }
 }
@@ -59,7 +66,7 @@ extension CountriesList {
 private extension CountriesList {
 
     var content: AnyView {
-        switch countries {
+        switch state.countries {
         case .notRequested: return AnyView(notRequestedView)
         case let .isLoading(last, _): return AnyView(loadingView(last))
         case let .loaded(countries): return AnyView(loadedView(countries, showSearch: true, showLoading: false))
@@ -69,7 +76,7 @@ private extension CountriesList {
     
     var permissionsButton: some View {
           Group {
-              if canRequestPushPermission {
+              if state.canRequestPushPermission {
                   Button(action: requestPushPermission, label: { Text("Allow Push") })
               } else {
                   EmptyView()
@@ -80,7 +87,7 @@ private extension CountriesList {
 
 private extension CountriesList {
     var routingBinding: Binding<Routing> {
-        $routingState.dispatched(to: injected.appState, \.routing.countriesList)
+        state.$routingState.dispatched(to: injected.appState, \.routing.countriesList)
     }
     
     func leadingPadding(_ geometry: GeometryProxy) -> CGFloat {
@@ -136,8 +143,8 @@ private extension CountriesList {
 private extension CountriesList {
     func reloadCountries() {
         injected.interactors.countriesInteractor
-            .load(countries: $countries,
-                  search: countriesSearch.searchText,
+            .load(countries: state.$countries,
+                  search: state.countriesSearch.searchText,
                   locale: localeContainer.locale)
     }
     
@@ -175,7 +182,7 @@ private extension CountriesList {
     func loadedView(_ countries: LazyList<Country>, showSearch: Bool, showLoading: Bool) -> some View {
         VStack {
             if showSearch {
-                SearchBar(text: $countriesSearch.searchText
+                SearchBar(text: state.$countriesSearch.searchText
                     .onSet { _ in
                         self.reloadCountries()
                     }
@@ -193,7 +200,7 @@ private extension CountriesList {
                     }
             }
             .id(countries.count)
-        }.padding(.bottom, self.countriesSearch.keyboardHeight)
+        }.padding(.bottom, self.state.countriesSearch.keyboardHeight)
     }
     
     func detailsView(country: Country) -> some View {
